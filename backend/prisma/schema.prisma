@@ -1,0 +1,139 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  email            String    @unique
+  name             String?
+  password         String
+  projects         Project[] @relation("ProjectOwner")
+  sharedProjects   Project[] @relation("ProjectShared", fields: [sharedProjectIds], references: [id])
+  sharedProjectIds String[]  @db.ObjectId
+  tasks            Task[]
+  image            String?
+  activities       Activity[]
+  notifications    Notification[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  comments         Comment[]
+}
+
+model Notification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  message     String
+  readStatus  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model Label {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  color     String   // Hex code
+  projectId String   @db.ObjectId
+  project   Project  @relation(fields: [projectId], references: [id])
+  tasks     Task[]   @relation(fields: [taskIds], references: [id])
+  taskIds   String[] @db.ObjectId
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, name])
+}
+
+model Project {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  description   String?
+  ownerId       String   @db.ObjectId
+  owner         User     @relation("ProjectOwner", fields: [ownerId], references: [id])
+  sharedWith    User[]   @relation("ProjectShared", fields: [sharedWithIds], references: [id])
+  sharedWithIds String[] @db.ObjectId
+  columns       Column[]
+  activities    Activity[]
+  labels        Label[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Column {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String
+  order     Int
+  projectId String   @db.ObjectId
+  project   Project  @relation(fields: [projectId], references: [id])
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String?
+  priority    String?   // "LOW", "MEDIUM", "HIGH"
+  status      String?   // Optional: keep for backward compatibility or simple lists
+  columnId    String   @db.ObjectId
+  column      Column   @relation(fields: [columnId], references: [id])
+  assigneeId  String?  @db.ObjectId
+  assignee    User?    @relation(fields: [assigneeId], references: [id])
+  attachments String[]
+  
+  // Dependencies
+  dependsOn      Task[]   @relation("TaskDependencies", fields: [dependsOnIds], references: [id])
+  dependsOnIds   String[] @db.ObjectId
+  dependencyFor  Task[]   @relation("TaskDependencies", fields: [dependencyForIds], references: [id])
+  dependencyForIds String[] @db.ObjectId
+
+  // Labels
+  labels         Label[]  @relation(fields: [labelIds], references: [id])
+  labelIds       String[] @db.ObjectId
+
+  // Time Tracking & Estimations
+  estimatedHours Float?    @default(0)
+  actualHours    Float?    @default(0)
+  storyPoints    Int?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  comments    Comment[]
+}
+
+model Activity {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  action    String   // e.g., "TASK_MOVED", "TASK_UPDATED", "TASK_CREATED", "TASK_DELETED"
+  details   String   // JSON string or descriptive text
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  projectId String   @db.ObjectId
+  project   Project  @relation(fields: [projectId], references: [id])
+  timestamp DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Author
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+
+  // Task
+  taskId    String   @db.ObjectId
+  task      Task     @relation(fields: [taskId], references: [id])
+
+  // Threading (Self-relation)
+  parentId  String?   @db.ObjectId
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies   Comment[] @relation("CommentReplies")
+}
